@@ -409,6 +409,16 @@ class Browser(UserAgentBase):
         else:
             return links
 
+    def images(self, **kwds):
+        """Return iterable over images (mechanize.Link objects)."""
+        if not self.viewing_html():
+            raise BrowserStateError("not viewing HTML")
+        imgs = self._factory.custom_links(urltags = {"img": "src"})
+        if kwds:
+            return self._filter_links(imgs, **kwds)
+        else:
+            return imgs
+
     def forms(self):
         """Return iterable over forms.
 

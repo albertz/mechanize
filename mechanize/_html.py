@@ -149,15 +149,17 @@ class LinksFactory:
         self._encoding = encoding
         self._base_url = base_url
 
-    def links(self):
+    def links(self, urltags=None):
         """Return an iterator that provides links of the document."""
+        if urltags is None: urltags = self.urltags
         response = self._response
         encoding = self._encoding
         base_url = self._base_url
+        response.seek(0)
         p = self.link_parser_class(response, encoding=encoding)
-
+        
         try:
-            for token in p.tags(*(self.urltags.keys()+["base"])):
+            for token in p.tags(*(urltags.keys()+["base"])):
                 if token.type == "endtag":
                     continue
                 if token.data == "base":
@@ -171,7 +173,7 @@ class LinksFactory:
                 # XXX use attr_encoding for ref'd doc if that doc does not
                 #  provide one by other means
                 #attr_encoding = attrs.get("charset")
-                url = attrs.get(self.urltags[tag])  # XXX is "" a valid URL?
+                url = attrs.get(urltags[tag])  # XXX is "" a valid URL?
                 if not url:
                     # Probably an <A NAME="blah"> link or <AREA NOHREF...>.
                     # For our purposes a link is something with a URL, so
@@ -383,13 +385,14 @@ class RobustLinksFactory:
         self._base_url = base_url
         self._encoding = encoding
 
-    def links(self):
+    def links(self, urltags = None):
+        if urltags is None: urltags = self.urltags
         bs = self._bs
         base_url = self._base_url
         encoding = self._encoding
         for ch in bs.recursiveChildGenerator():
             if (isinstance(ch, _beautifulsoup.Tag) and
-                ch.name in self.urltags.keys()+["base"]):
+                ch.name in urltags.keys()+["base"]):
                 link = ch
                 attrs = bs.unescape_attrs(link.attrs)
                 attrs_dict = dict(attrs)
@@ -398,7 +401,7 @@ class RobustLinksFactory:
                     if base_href is not None:
                         base_url = base_href
                     continue
-                url_attr = self.urltags[link.name]
+                url_attr = urltags[link.name]
                 url = attrs_dict.get(url_attr)
                 if not url:
                     continue
@@ -576,6 +579,13 @@ class Factory:
                 raise
         return self._links_genf()
 
+    def custom_links(self, **kwargs):
+        """Return iterable over mechanize.Link-like objects.
+
+        Raises mechanize.ParseError on failure.
+        """
+        return self._links_factory.links(**kwargs)
+        
 class DefaultFactory(Factory):
     """Based on sgmllib."""
     def __init__(self, i_want_broken_xhtml_support=False):
