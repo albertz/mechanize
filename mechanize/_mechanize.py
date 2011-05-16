@@ -11,7 +11,7 @@ included with the distribution).
 
 import copy, re, os, urllib, urllib2
 
-from _html import DefaultFactory
+from _html import DefaultFactory, RobustFactory
 import _response
 import _request
 import _rfc3986
