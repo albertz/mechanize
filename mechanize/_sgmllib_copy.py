@@ -116,6 +116,103 @@ class SGMLParser(markupbase.ParserBase):
     def error(self, message):
         raise SGMLParseError(message)
 
+    # None or function (exception,pos) -> new_pos
+    error_handler = None
+
+    def _goahead(self, i, rawdata):
+        n = len(rawdata)
+        if self.nomoretags:
+            self.handle_data(rawdata[i:n])
+            i = n
+            return i
+        match = interesting.search(rawdata, i)
+        if match: j = match.start()
+        else: j = n
+        if i < j:
+            self.handle_data(rawdata[i:j])
+        i = j
+        if i == n: return i
+        if rawdata[i] == '<':
+            if starttagopen.match(rawdata, i):
+                if self.literal:
+                    self.handle_data(rawdata[i])
+                    i = i+1
+                    return i
+                k = self.parse_starttag(i)
+                if k < 0: return None
+                i = k
+                return i
+            if rawdata.startswith("</", i):
+                k = self.parse_endtag(i)
+                if k < 0: return None
+                i = k
+                self.literal = 0
+                return i
+            if self.literal:
+                if n > (i + 1):
+                    self.handle_data("<")
+                    i = i+1
+                else:
+                    # incomplete
+                    return None
+                return i
+            if rawdata.startswith("<!--", i):
+                    # Strictly speaking, a comment is --.*--
+                    # within a declaration tag <!...>.
+                    # This should be removed,
+                    # and comments handled only in parse_declaration.
+                k = self.parse_comment(i)
+                if k < 0: return None
+                i = k
+                return i
+            if rawdata.startswith("<?", i):
+                k = self.parse_pi(i)
+                if k < 0: return None
+                i = i+k
+                return i
+            if rawdata.startswith("<!", i):
+                # This is some sort of declaration; in "HTML as
+                # deployed," this should only be the document type
+                # declaration ("<!DOCTYPE html...>").
+                k = self.parse_declaration(i)
+                if k < 0: return None
+                i = k
+                return i
+        elif rawdata[i] == '&':
+            if self.literal:
+                self.handle_data(rawdata[i])
+                i = i+1
+                return i
+            match = charref.match(rawdata, i)
+            if match:
+                name = match.group(1)
+                self.handle_charref(name)
+                i = match.end(0)
+                if rawdata[i-1] != ';': i = i-1
+                return i
+            match = entityref.match(rawdata, i)
+            if match:
+                name = match.group(1)
+                self.handle_entityref(name)
+                i = match.end(0)
+                if rawdata[i-1] != ';': i = i-1
+                return i
+        else:
+            self.error('neither < nor & ??')
+        # We get here only if incomplete matches but
+        # nothing else
+        match = incomplete.match(rawdata, i)
+        if not match:
+            self.handle_data(rawdata[i])
+            i = i+1
+            return i
+        j = match.end(0)
+        if j == n:
+            return None # Really incomplete
+        self.handle_data(rawdata[i:j])
+        i = j
+        return i
+    
     # Internal -- handle data as far as reasonable.  May leave state
     # and data to be processed by a subsequent call.  If 'end' is
     # true, force handling all data as if followed by EOF marker.
@@ -124,96 +221,15 @@ class SGMLParser(markupbase.ParserBase):
         i = 0
         n = len(rawdata)
         while i < n:
-            if self.nomoretags:
-                self.handle_data(rawdata[i:n])
-                i = n
-                break
-            match = interesting.search(rawdata, i)
-            if match: j = match.start()
-            else: j = n
-            if i < j:
-                self.handle_data(rawdata[i:j])
-            i = j
-            if i == n: break
-            if rawdata[i] == '<':
-                if starttagopen.match(rawdata, i):
-                    if self.literal:
-                        self.handle_data(rawdata[i])
-                        i = i+1
-                        continue
-                    k = self.parse_starttag(i)
-                    if k < 0: break
-                    i = k
-                    continue
-                if rawdata.startswith("</", i):
-                    k = self.parse_endtag(i)
-                    if k < 0: break
-                    i = k
-                    self.literal = 0
-                    continue
-                if self.literal:
-                    if n > (i + 1):
-                        self.handle_data("<")
-                        i = i+1
-                    else:
-                        # incomplete
-                        break
-                    continue
-                if rawdata.startswith("<!--", i):
-                        # Strictly speaking, a comment is --.*--
-                        # within a declaration tag <!...>.
-                        # This should be removed,
-                        # and comments handled only in parse_declaration.
-                    k = self.parse_comment(i)
-                    if k < 0: break
-                    i = k
-                    continue
-                if rawdata.startswith("<?", i):
-                    k = self.parse_pi(i)
-                    if k < 0: break
-                    i = i+k
-                    continue
-                if rawdata.startswith("<!", i):
-                    # This is some sort of declaration; in "HTML as
-                    # deployed," this should only be the document type
-                    # declaration ("<!DOCTYPE html...>").
-                    k = self.parse_declaration(i)
-                    if k < 0: break
-                    i = k
-                    continue
-            elif rawdata[i] == '&':
-                if self.literal:
-                    self.handle_data(rawdata[i])
-                    i = i+1
-                    continue
-                match = charref.match(rawdata, i)
-                if match:
-                    name = match.group(1)
-                    self.handle_charref(name)
-                    i = match.end(0)
-                    if rawdata[i-1] != ';': i = i-1
-                    continue
-                match = entityref.match(rawdata, i)
-                if match:
-                    name = match.group(1)
-                    self.handle_entityref(name)
-                    i = match.end(0)
-                    if rawdata[i-1] != ';': i = i-1
-                    continue
+            if self.error_handler is None:
+                nexti = self._goahead(i, rawdata)
             else:
-                self.error('neither < nor & ??')
-            # We get here only if incomplete matches but
-            # nothing else
-            match = incomplete.match(rawdata, i)
-            if not match:
-                self.handle_data(rawdata[i])
-                i = i+1
-                continue
-            j = match.end(0)
-            if j == n:
-                break # Really incomplete
-            self.handle_data(rawdata[i:j])
-            i = j
+                try:
+                    nexti = self._goahead(i, rawdata)
+                except Exception, e:
+                    nexti = self.error_handler(e, i)
+            if nexti is None: break
+            i = nexti            
         # end while
         if end and i < n:
             self.handle_data(rawdata[i:n])
