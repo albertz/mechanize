@@ -381,7 +381,9 @@ class TolerantPullParser(_AbstractParser, sgmllib.SGMLParser):
         self._tokenstack.append(Token("starttag", tag, attrs))
     def unknown_endtag(self, tag):
         self._tokenstack.append(Token("endtag", tag))
-
+    def error_handler(self, exc, pos):
+        #print "parser exception:", exc
+        return pos + 1
 
 def _test():
    import doctest, _pullparser
